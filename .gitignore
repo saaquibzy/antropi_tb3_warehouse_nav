@@ -1,0 +1,8 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+*_wip.*
+*.mp4
+.vscode/
