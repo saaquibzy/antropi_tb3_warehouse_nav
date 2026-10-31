@@ -1,104 +1,137 @@
-# TurtleBot3 Warehouse Navigation
+# TurtleBot3 Waffle Warehouse Navigation (Gazebo Harmonic + Nav2)
 
-A ROS 2 Jazzy simulation project for a TurtleBot3 Waffle navigating a warehouse world in Gazebo Sim. It includes the warehouse worlds, a single Gazebo-to-ROS bridge, the official `warehouse_fresh` map, Nav2 with AMCL, and a saved RViz layout.
+Autonomous navigation of a TurtleBot3 Waffle in a custom 10 x 8 m warehouse
+simulated in Gazebo Harmonic, using ROS 2 Jazzy, Nav2 and AMCL on a map built
+with SLAM Toolbox. The whole system starts from a single launch command.
+
+Built for the Antropi Robotics Software Intern assignment.
+
+**Demo video:** TBD (link will be added here)
+
+## Features
+
+- Custom warehouse world: walls, four shelves, static obstacles, dock and goal markers
+- Optional world variant with two controllable dynamic obstacles
+- Map built once with SLAM Toolbox and saved in the repo (`warehouse_fresh`)
+- Localization with AMCL on the saved map, initial pose set automatically
+- Nav2 path planning and obstacle avoidance (costmaps, planner, controller)
+- One-command bringup: Gazebo, robot, bridge, Nav2, AMCL and RViz
 
 ## Tested environment
 
-- Ubuntu 24.04.5 LTS
-- ROS 2 Jazzy
-- Gazebo Sim 8.15.0 (Harmonic)
-- TurtleBot3 Waffle model
+| Item | Version |
+|---|---|
+| OS | Ubuntu 24.04 |
+| ROS 2 | Jazzy |
+| Simulator | Gazebo Sim 8 (Harmonic) |
+| Robot | TurtleBot3 Waffle |
+| Navigation | Nav2, AMCL, SLAM Toolbox |
 
-## Install dependencies
+## Install
 
 ```bash
 sudo apt update
-sudo apt install python3-colcon-common-extensions \
-  ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
   ros-jazzy-turtlebot3 ros-jazzy-turtlebot3-gazebo \
-  ros-jazzy-turtlebot3-msgs ros-jazzy-turtlebot3-teleop \
-  ros-jazzy-slam-toolbox ros-jazzy-ros-gz
+  ros-jazzy-slam-toolbox ros-jazzy-ros-gz python3-colcon-common-extensions
 ```
 
 ## Build
 
-From the repository root:
-
 ```bash
+git clone https://github.com/saaquibzy/antropi_tb3_warehouse_nav.git
+cd antropi_tb3_warehouse_nav
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 export TURTLEBOT3_MODEL=waffle
 ```
 
-## Start the warehouse navigation demo
-
-With the workspace built and sourced, run this one command:
+## Run
 
 ```bash
 ros2 launch tb3_nav_demo bringup.launch.py
 ```
 
-The default world is `mapping_world`; RViz starts by default. To choose the other included world or omit RViz:
+This starts Gazebo with the warehouse, spawns one Waffle at (-4.0, -2.8),
+starts the ROS-Gazebo bridge, Nav2 with the saved map, AMCL, and RViz.
+The initial pose is set automatically; wait for the particle cloud to converge
+around the robot.
 
-```bash
-ros2 launch tb3_nav_demo bringup.launch.py world:=dynamic_navigation_world rviz:=false
-```
+### Launch arguments
 
-## Send a navigation goal
+| Argument | Default | Meaning |
+|---|---|---|
+| `world` | `mapping_world` | `mapping_world` or `dynamic_navigation_world` |
+| `rviz` | `true` | Start RViz with the saved config |
+| `x_pose`, `y_pose` | `-4.0`, `-2.8` | Robot spawn position |
 
-In RViz, wait for the Navigation and Localization indicators to become active. Select **Nav2 Goal** in the top toolbar, then click and drag on a clear location in the map to set the target position and heading. The Navigation 2 panel shows goal feedback and completion state.
+### Send a goal
 
-## Optional mission scripts
-
-This repository currently contains no `delivery_mission.py` or `obstacle_sweep.py` scripts. Add one before using a corresponding mission command.
+1. In RViz, click **2D Goal Pose** in the toolbar.
+2. Click a free spot on the map and drag to set the heading.
+3. The planned path appears and the robot drives to the goal, avoiding obstacles.
 
 ## Architecture
 
-- `tb3_dynamic_world` starts Gazebo, spawns one Waffle, starts `robot_state_publisher`, and runs the single `ros_gz_bridge` instance.
-- The bridge owns `/clock` and Gazebo odometry TF (`odom -> base_footprint`). `robot_state_publisher` publishes the robot link and sensor transforms.
-- Nav2 bringup starts AMCL; AMCL owns `map -> odom` and initializes the robot at `(0, 0, 0)` in `map`.
-- The navigation configuration uses `/scan` and `/odom`. No EKF or `robot_localization` node is configured.
+```
+Gazebo Harmonic -> ros_gz_bridge -> /scan, /odom, /imu, /joint_states, /clock, /tf
+                                          |
+                          map_server + AMCL (map -> odom)
+                                          |
+                                         Nav2
+                                          |
+                                      /cmd_vel -> Gazebo robot
+```
+
+Design rules that keep the system stable:
+
+- **One `/clock` publisher:** the single `ros_gz_bridge` process.
+- **One owner per transform:**
+  - `odom -> base_footprint`: the Gazebo diff-drive plugin, via the bridge
+  - fixed links (`base_link`, sensors, wheels): `robot_state_publisher`
+  - `map -> odom`: AMCL during navigation (SLAM Toolbox during mapping, never both)
+- **Original wheel odometry**; no sensor-fusion filter is used.
+- `use_sim_time` is `true` for every node.
+
+## Mapping (how the map was made)
+
+The map in `src/tb3_nav_demo/maps/` was built once by running SLAM Toolbox
+(online async) while driving the robot with keyboard teleop at about
+0.1 to 0.15 m/s along every wall and around each shelf, then saved with
+`nav2_map_server map_saver_cli`. It is 203 x 166 cells at 0.05 m/cell.
+
+## Repository layout
+
+```
+src/
+|-- tb3_dynamic_world/
+|   |-- config/waffle_bridge.yaml
+|   |-- launch/{world_robot,spawn_robot_no_bridge}.launch.py
+|   `-- worlds/{mapping_world,dynamic_navigation_world}.sdf
+`-- tb3_nav_demo/
+    |-- config/nav2_params.yaml
+    |-- launch/bringup.launch.py
+    |-- maps/warehouse_fresh.{yaml,pgm}
+    `-- rviz/nav2_warehouse.rviz
+docs/
+```
 
 ## Troubleshooting
 
-- **Gazebo reports that a server or GUI is already running:** check for stale `gz sim` processes from an earlier launch and stop that launch before starting another.
-- **More than one `/clock` publisher appears:** check for a second bridge or an old simulation process. This bringup starts one bridge.
-- **TF lookup errors or missing transforms:** confirm that `/clock`, `/scan`, `/odom`, `/tf`, and `/tf_static` are active; use `ros2 run tf2_tools view_frames` to inspect the frame tree. Allow a few seconds for simulation and lifecycle startup.
-- **Robot does not localize:** ensure the official map is loaded, the robot is in the mapped room, and RViz uses the `map` fixed frame with `/scan` visible.
-
-## Repository tree
-
-```text
-antropi_tb3_warehouse_nav/
-├── docs/
-│   ├── demo/README.md
-│   └── FORM_NOTES.md
-├── src/
-│   ├── tb3_dynamic_world/
-│   │   ├── config/waffle_bridge.yaml
-│   │   ├── launch/
-│   │   ├── worlds/
-│   │   ├── CMakeLists.txt
-│   │   └── package.xml
-│   └── tb3_nav_demo/
-│       ├── config/nav2_params.yaml
-│       ├── launch/bringup.launch.py
-│       ├── maps/warehouse_fresh.{yaml,pgm}
-│       ├── resource/
-│       ├── rviz/nav2_warehouse.rviz
-│       ├── tb3_nav_demo/
-│       ├── package.xml
-│       ├── setup.cfg
-│       └── setup.py
-├── .gitignore
-└── README.md
-```
-
-## Demo video
-
-[Demo video placeholder](docs/demo/)
+- **Robot does not move or Nav2 will not activate:** check that there is exactly
+  one `/clock` publisher: `ros2 topic info /clock --verbose`.
+- **Transform errors:** inspect the tree with `ros2 run tf2_tools view_frames`.
+  Each transform must have a single publisher.
+- **Two robots or two worlds:** an old Gazebo is still running. Check
+  `ps aux | grep -E "gz|rviz|parameter_bridge"` and stop the stale processes
+  before relaunching.
+- **Particles do not converge:** confirm the robot spawned at (-4.0, -2.8) with
+  yaw 0, which matches the AMCL initial pose of (0, 0, 0) in the map frame.
 
 ## Future work
 
-EKF sensor fusion.
+- EKF sensor fusion of wheel odometry and IMU (not implemented in this version)
+- Warehouse delivery mission using Nav2 waypoint following
+- Frontier-based autonomous exploration
+- Driving the dynamic obstacles during a run to demonstrate live replanning
