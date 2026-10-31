@@ -6,7 +6,8 @@ with SLAM Toolbox. The whole system starts from a single launch command.
 
 Built for the Antropi Robotics Software Intern assignment.
 
-**Demo video:** TBD (link will be added here)
+**Demo video:** [Watch on Google Drive](https://drive.google.com/file/d/1tURpbV6L9pdV5xDSwqQEbTjoouyK1SPZ/view?usp=sharing)  
+**Additional run:** [Watch on Google Drive](https://drive.google.com/file/d/1jnAeO_U2Tv2AUu3FTKTtHblHmUXMXSRJ/view?usp=sharing)
 
 ## Features
 
